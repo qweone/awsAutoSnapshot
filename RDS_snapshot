@@ -1,0 +1,60 @@
+from __future__ import print_function
+
+import boto3
+import sys
+from datetime import datetime, timedelta
+import json
+
+
+def lambda_handler(event, context):
+    for i in range(0, len(event)):
+        DBInstanceIdentifier = event[i]['DBInstanceIdentifier']
+        remain_days = event[i]['remain_days']
+        if DBInstanceIdentifier == '' or remain_days == '':
+            exit(1)
+        print(DBInstanceIdentifier)
+        print(remain_days)
+        create_snapshot(DBInstanceIdentifier)
+        remove_snapshot(DBInstanceIdentifier, remain_days)
+
+		
+def create_snapshot(DBInstanceIdentifier):
+    client = boto3.client('rds')
+    print ('Create snapshot for {DBInstanceIdentifier}'.format(DBInstanceIdentifier=DBInstanceIdentifier))
+
+
+    response = client.create_db_snapshot(
+        DBInstanceIdentifier=DBInstanceIdentifier,
+        DBSnapshotIdentifier=DBInstanceIdentifier + '-' + datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    )
+    print ("Following is response message:")
+    print (response)
+
+	
+	
+	
+def remove_snapshot(DBInstanceIdentifier, remain_days):
+    client = boto3.client('rds')
+    delete_time = datetime.utcnow() - timedelta(days=remain_days)
+
+    # delete historical snapshot#
+    print ('Deleting any snapshots older than {remain_days} days'.format(remain_days=remain_days))
+    snapshots = client.describe_db_snapshots(DBInstanceIdentifier=DBInstanceIdentifier,SnapshotType ='manual')
+
+    deletion_counter = 0
+    
+    for snapshot in snapshots['DBSnapshots']:
+        if snapshot['Status'] <> 'available':
+            continue
+        start_time = snapshot['SnapshotCreateTime'].replace(tzinfo=None)
+        if start_time < delete_time:
+            print ('Deleting {id}'.format(id=snapshot['DBSnapshotIdentifier']))
+            deletion_counter = deletion_counter + 1
+    
+            # Just to make sure you're reading!
+            client.delete_db_snapshot(DBSnapshotIdentifier=snapshot['DBSnapshotIdentifier'])
+    print ('Deleted {number} snapshots'.format(number=deletion_counter))
+
+
+
+
