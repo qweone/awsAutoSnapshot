@@ -1,0 +1,65 @@
+from __future__ import print_function
+
+import boto3
+import sys
+from datetime import datetime, timedelta
+import json
+
+
+def lambda_handler(event, context):
+    for i in range(0, len(event)):
+        volume_id = event[i]['volume_id']
+        remain_days = event[i]['remain_days']
+        if volume_id == '' or remain_days == '':
+            exit(1)
+        create_snapshot(volume_id)
+        remove_snapshot(volume_id, remain_days)
+
+
+
+def create_snapshot(volume_id):
+    client = boto3.client('ec2')
+    print ('Create snapshot for {volume_id}'.format(volume_id=volume_id))
+
+
+    response = client.create_snapshot(
+        DryRun=False,
+        VolumeId=volume_id,
+        Description=volume_id + '_' + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    )
+    print ("Following is response message:")
+    print (response)
+
+
+
+
+def remove_snapshot(volume_id, remain_days):
+    client = boto3.client('ec2')
+    delete_time = datetime.utcnow() - timedelta(days=remain_days)
+    filters = [
+        {
+            'Name': 'volume-id',
+            'Values': [
+                volume_id,
+            ],
+        },
+    ]
+    # delete historical snapshot#
+    print ('Deleting any snapshots older than {remain_days} days'.format(remain_days=remain_days))
+    snapshots = client.describe_snapshots(Filters=filters)
+
+    deletion_counter = 0
+    size_counter = 0
+    for snapshot in snapshots['Snapshots']:
+        start_time = snapshot['StartTime'].replace(tzinfo=None)
+        if start_time < delete_time:
+            print ('Deleting {id}'.format(id=snapshot['SnapshotId']))
+            deletion_counter = deletion_counter + 1
+            size_counter = size_counter + snapshot['VolumeSize']
+            # Just to make sure you're reading!
+            client.delete_snapshot(SnapshotId=snapshot['SnapshotId'], DryRun=False)
+    print ('Deleted {number} snapshots totalling {size} GB'.format(number=deletion_counter, size=size_counter))
+
+
+
+
